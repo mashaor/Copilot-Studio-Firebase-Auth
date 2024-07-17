@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Copilot Studio 3P SSO with Firebase</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, shrink-to-fit=no">
+    <script src="https://cdn.botframework.com/botframework-webchat/latest/webchat.js"></script>
+
+    <style>
+        html, body {
+            height: 100%;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", "Segoe UI Web (West European)", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        #header {
+            background-color: rgb(11, 85, 106);
+            color: rgb(255, 255, 255);
+            font-weight: 600;
+            height: 48px;
+            padding: 0px 13px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        #subheader {
+            background-color: rgb(243, 242, 241);
+            padding: 7px 13px;
+            font-size: 12px;
+            font-weight: 400;
+        }
+
+        a {
+            color: rgb(0, 90, 158);
+        }
+
+        a:hover {
+            color: rgb(0, 69, 120);
+        }
+
+        #webchat {
+            position: fixed;
+            height: calc(100% - 75px);
+            width: 100%;
+            top: 75px;
+            overflow: hidden;
+        }
+
+        #sign-out-button {
+            font-size: 16px;
+            border: none;
+            color: black;
+            cursor: pointer;
+            visibility: hidden;
+            position: fixed;
+            top: 5px;
+            right: 10px;
+            display: inline-block;
+            width: auto;
+            padding: 10px 20px;
+            border-radius: 5px;
+        }
+
+        #chat-container {
+            visibility: hidden;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="firebaseui-auth-container"></div>
+    <div id="chat-container">
+        <div id="header">
+            Copilot Studio with Firebase
+        </div>
+        <button id="sign-out-button" onclick="signOutUser()">Sign Out</button>
+        <div id="webchat"> </div>
+    </div>
+
+    <script type="module">
+        // Firebase configuration
+
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getAuth, signInWithPopup, signOut, onAuthStateChanged, getIdToken, SAMLAuthProvider } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+        // Firebase configuration
+        const firebaseConfig = {
+            //TODO
+        };
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+
+        // SAML provider
+        const provider = new SAMLAuthProvider('<SAML CLIENT ID>'); 
+
+        // Sign-in function
+        async function signIn() {
+            try {
+                console.log(`Opening signInWithPopup`);
+
+                signInWithPopup(auth, provider)
+                .then((result) => {
+                        // User is signed in.
+                        console.log(`User is signed in.`, result.user.accessToken);
+                        renderChatWidget(result.user.accessToken);
+                        // Provider data available using getAdditionalUserInfo()
+                    })
+                .catch((error) => {
+                        // Handle error.
+                        console.log(`Error: `, error);
+                    });
+
+            } catch (error) {
+                console.error('Error during login:', error);
+            }
+        }
+
+        // Sign-out function
+        function signOutUser() {
+            auth.signOut().then(() => {
+                window.location.reload();
+            }).catch((error) => {
+                console.error('Sign out error:', error);
+            });
+        }
+
+        // Make the signOutUser function global
+        window.signOutUser = signOutUser;
+
+        // Check authentication state and render chat widget if authenticated
+        onAuthStateChanged(auth, (user) => {
+            if (user.user) {
+                console.log('User is already authenticated - rendering the chat widget');
+                renderChatWidget(user.accessToken);
+            } else {
+                console.log('User is not authenticated - prompting to sign in');
+                signIn();
+            }
+        });
+
+        // Utility function 
+        async function fetchJSON(url, options = {}) {
+            const res = await fetch(url, {
+                ...options,
+                headers: {
+                    ...options.headers,
+                    accept: 'application/json'
+                }
+            });
+
+            if (!res.ok) {
+                throw new Error(`Failed to fetch JSON due to ${res.status}`);
+            }
+
+            return await res.json();
+        }
+
+        async function renderChatWidget(idToken) {
+            const tokenEndpoint = "<COPILOT TOKEN ENDPOINT>"
+
+            const userID = idToken != null ?
+                (idToken).substr(0, 36) :
+                (Math.random().toString() + Date.now().toString()).substr(0, 64);
+
+            // Generate a direct line token
+            const { token } = await fetchJSON(tokenEndpoint);
+            const directLine = window.WebChat.createDirectLine({ token });
+
+            const store = WebChat.createStore(
+                {},
+                ({ dispatch }) => next => action => {
+                    const { type } = action;
+
+                    // Configure your bot to start the conversation automatically
+                    if (action.type === "DIRECT_LINE/CONNECT_FULFILLED") {
+                        dispatch({
+                            meta: {
+                                method: "keyboard",
+                            },
+                            payload: {
+                                activity: {
+                                    channelData: {
+                                        postBack: true,
+                                    },
+                                    // Web Chat will show the Start Conversation System Topic message
+                                    name: 'startConversation',
+                                    type: "event"
+                                },
+                            },
+                            type: "DIRECT_LINE/POST_ACTIVITY",
+                        });
+                    }
+
+                    // Filter incoming activities from Direct Line to intercept the Login Card
+                    if (action.type === 'DIRECT_LINE/INCOMING_ACTIVITY') {
+                        const activity = action.payload.activity;
+
+                        if (activity.attachments?.[0]?.contentType === 'application/vnd.microsoft.card.oauth') {
+
+                            // Extract the endpoint to which the token is posted
+                            const postEndpoint = activity.attachments?.[0].content.tokenPostResource.sasUrl;
+
+                            if (idToken) {
+                                fetch(postEndpoint, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/json'
+                                    },
+                                    body: JSON.stringify({
+                                        token: idToken
+                                    })
+                                }).then(() => {
+                                    // Token sent successfully, do not show the login card
+                                }).catch((error) => {
+                                    console.error('An error occurred:', error);
+                                    // Token was not sent successfully, display the login card to the user
+                                    return next(action);
+                                });
+                                return;
+                            } else {
+                                return next(action);
+                            }
+
+                        } else {
+                            return next(action);
+                        }
+                    } else {
+                        return next(action);
+                    }
+                });
+
+            const styleOptions = {
+                hideUploadButton: true
+            };
+
+            document.getElementById('chat-container').style.visibility = 'visible';
+            document.getElementById('sign-out-button').style.visibility = 'visible';
+
+            window.WebChat.renderWebChat(
+                {
+                    directLine: directLine,
+                    store,
+                    userID: userID,
+                    styleOptions
+                },
+                document.getElementById('webchat')
+            );
+        }
+    </script>
+</body>
+
+</html>
