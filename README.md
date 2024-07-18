@@ -80,6 +80,9 @@ After signing-in using the Firebase popup, the user's access token will be sent 
 
 [Copilot  Sign-on with a generic OAuth provider](https://learn.microsoft.com/en-us/microsoft-copilot-studio/configure-sso-3p)
 
-[Customize the look and feel of a copilot](https://learn.microsoft.com/en-us/microsoft-copilot-studio/customize-default-canvas?tabs=web#customize-the-default-canvas-simple)
+[Customize the look and feel of a copilot](https://learn.microsoft.com/en-us/microsoft-copilot-studio/advanced-end-user-authentication?tabs=web#authentication-variables)
+
+[Copilot authentication variables](https://firebase.google.com/docs/auth/web/saml#web_4)
 
 [Firebase SAML](https://firebase.google.com/docs/auth/web/saml#web_4)
+
